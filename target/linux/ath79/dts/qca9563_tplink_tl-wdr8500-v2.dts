@@ -1,0 +1,143 @@
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+/dts-v1/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+
+#include "qca956x.dtsi"
+
+/ {
+	compatible = "tplink,tl-wdr8500-v2", "qca,qca9563";
+	model = "TP-Link TL-WDR8500 V2";
+
+	chosen {
+		bootargs = "console=ttyS0,115200n8";
+	};
+
+	aliases {
+		led-boot = &led_system;
+		led-failsafe = &led_system;
+		led-running = &led_system;
+		led-upgrade = &led_system;
+	};
+
+	leds: leds {
+		compatible = "gpio-leds";
+
+		led_system: system {
+			label = "tp-link:blue:system";
+			gpios = <&gpio 21 GPIO_ACTIVE_LOW>;
+			default-state = "on";
+		};
+
+		led_wlan: wlan {
+			label = "tp-link:green:wlan";
+			gpios = <&gpio 5 GPIO_ACTIVE_LOW>;
+			linux,default-trigger = "phy0tpt";
+		};
+	};
+
+	keys: keys {
+		compatible = "gpio-keys";
+
+		reset {
+			label = "Reset button";
+			linux,code = <KEY_RESTART>;
+			gpios = <&gpio 1 GPIO_ACTIVE_LOW>;
+			debounce-interval = <60>;
+		};
+
+		wifi {
+			label = "RFKILL button";
+			linux,code = <KEY_RFKILL>;
+			gpios = <&gpio 2 GPIO_ACTIVE_LOW>;
+			debounce-interval = <60>;
+		};
+	};
+
+	rtl8367b {
+			compatible = "realtek,rtl8367s";
+			realtek,extif1 = <1 1 9 1 1 1 1 1 2>;
+			mii-bus = <&mdio0>;
+			cpu-port = <6>;
+	};
+
+};
+
+&pcie {
+	status = "okay";
+};
+
+&uart {
+	status = "okay";
+};
+
+&gpio {
+	status = "okay";
+};
+
+&spi {
+	status = "okay";
+
+	num-cs = <1>;
+
+	flash@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <25000000>;
+
+		mtdparts: partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+		};
+	};
+};
+
+&mtdparts {
+	factory_boot: partition@0 {
+		label = "factory_boot";
+		reg = <0x000000 0x01b800>;
+		read-only;
+	};
+
+	factory_info: partition@1b800 {
+		label = "factory_info";
+		reg = <0x01b800 0x000800>;
+		read-only;
+	};
+	
+	art: partition@1c000 {
+		label = "art";
+		reg = <0x01c000 0x004000>;
+		read-only;
+	};
+
+	partition@20000 {
+		label = "firmware";
+		compatible = "tplink,firmware";
+		reg = <0x020000 0x7e0000>;
+	};
+};
+
+&mdio0 {
+	status = "okay";
+};
+
+&eth0 {
+	status = "okay";
+	phy-mode = "sgmii";
+	mtd-mac-address = <&factory_info 0xd>;
+	pll-data = <0x03000101 0x00000101 0x00001919>;
+	fixed-link {
+		speed = <1000>;
+		full-duplex;
+	};
+};
+
+&wmac {
+	status = "okay";
+
+	mtd-cal-data = <&art 0x0>;
+	mtd-mac-address = <&factory_info 0xd>;
+};
