@@ -882,7 +882,20 @@ static int rtl8367b_extif_set_mode(struct rtl8366_smi *smi, int id,
 		RTL8367B_DIS_RGMII_MASK << RTL8367B_DIS_RGMII_SHIFT(id),
 		mode << RTL8367B_DIS_RGMII_SHIFT(id));
 
+	if (mode == RTL8367S_EXTIF_MODE_SGMII ||
+	    mode == RTL8367S_EXTIF_MODE_HSGMII) {
+		REG_WR(smi, RTL8367S_SDS_INDACS_DATA_REG, 0x7106);
+		REG_WR(smi, RTL8367S_SDS_INDACS_ADDR_REG, 0x0003);
+		REG_WR(smi, RTL8367S_SDS_INDACS_CMD_REG,
+				RTL8367S_SDS_CMD | RTL8367S_SDS_RWOP);
+	}
+
 	return 0;
+
+invalid_mode:
+	dev_err(smi->parent,
+		"invalid mode for external interface %d\n", id);
+	return -EINVAL;
 }
 
 static int rtl8367b_extif_set_force(struct rtl8366_smi *smi, int id,
@@ -891,6 +904,20 @@ static int rtl8367b_extif_set_force(struct rtl8366_smi *smi, int id,
 	u32 mask;
 	u32 val;
 	int err;
+
+	if (id == RTL8367_EXTIF1 &&
+	    of_device_is_compatible(smi->parent->of_node, "realtek,rtl8367s")) {
+		REG_RMW(smi, RTL8367S_SDS_MISC, RTL8367S_CFG_SGMII_FDUP,
+			pa->duplex ? RTL8367S_CFG_SGMII_FDUP : 0);
+		REG_RMW(smi, RTL8367S_SDS_MISC, RTL8367S_CFG_SGMII_SPD_MASK,
+			pa->speed << RTL8367S_CFG_SGMII_SPD_SHIFT);
+		REG_RMW(smi, RTL8367S_SDS_MISC, RTL8367S_CFG_SGMII_LINK,
+			pa->link ? RTL8367S_CFG_SGMII_LINK : 0);
+		REG_RMW(smi, RTL8367S_SDS_MISC, RTL8367S_CFG_SGMII_TXFC,
+			pa->txpause ? RTL8367S_CFG_SGMII_TXFC : 0);
+		REG_RMW(smi, RTL8367S_SDS_MISC, RTL8367S_CFG_SGMII_RXFC,
+			pa->rxpause ? RTL8367S_CFG_SGMII_RXFC : 0);
+	}
 
 	mask = (RTL8367B_DI_FORCE_MODE |
 		RTL8367B_DI_FORCE_NWAY |
@@ -979,6 +1006,7 @@ static int rtl8367b_extif_init(struct rtl8366_smi *smi, int id,
 	mode = (cfg) ? cfg->mode : RTL8367_EXTIF_MODE_DISABLED;
 
 	err = rtl8367b_extif_set_mode(smi, id, mode);
+	
 	if (err)
 		return err;
 
@@ -991,6 +1019,15 @@ static int rtl8367b_extif_init(struct rtl8366_smi *smi, int id,
 						     cfg->rxdelay);
 		if (err)
 			return err;
+
+		if (of_device_is_compatible(smi->parent->of_node,
+					    "realtek,rtl8367s")) {
+			/* disable pre-emphasis */
+			REG_WR(smi, RTL8367S_SDS_INDACS_DATA_REG, 0x28A0);
+			REG_WR(smi, RTL8367S_SDS_INDACS_ADDR_REG, 0x0482);
+			REG_WR(smi, RTL8367S_SDS_INDACS_CMD_REG,
+					RTL8367S_SDS_CMD | RTL8367S_SDS_RWOP);
+		}
 	}
 
 	return 0;
@@ -1001,6 +1038,7 @@ static int rtl8367b_extif_init_of(struct rtl8366_smi *smi, int id,
 				  const char *name)
 {
 	struct rtl8367_extif_config *cfg;
+	enum rtl8367_port_speed speed;
 	const __be32 *prop;
 	int size;
 	int err;
@@ -1026,7 +1064,11 @@ static int rtl8367b_extif_init_of(struct rtl8366_smi *smi, int id,
 	cfg->ability.rxpause = be32_to_cpup(prop++);
 	cfg->ability.link = be32_to_cpup(prop++);
 	cfg->ability.duplex = be32_to_cpup(prop++);
-	cfg->ability.speed = be32_to_cpup(prop++);
+	speed = be32_to_cpup(prop++);
+	if (of_device_is_compatible(smi->parent->of_node, "realtek,rtl8367s") &&
+	    cfg->mode == RTL8367S_EXTIF_MODE_HSGMII)
+		speed = RTL8367_PORT_SPEED_1000;
+	cfg->ability.speed = speed;
 
 	err = rtl8367b_extif_init(smi, id, cfg);
 	kfree(cfg);
@@ -1055,19 +1097,28 @@ static int rtl8367b_setup(struct rtl8366_smi *smi)
 
 	/* initialize external interfaces */
 	if (smi->parent->of_node) {
-		err = rtl8367b_extif_init_of(smi, 0, "realtek,extif0");
+		err = rtl8367b_extif_init_of(smi, RTL8367_EXTIF0,
+					     "realtek,extif0");
 		if (err)
 			return err;
 
-		err = rtl8367b_extif_init_of(smi, 1, "realtek,extif1");
+		err = rtl8367b_extif_init_of(smi, RTL8367_EXTIF1,
+					     "realtek,extif1");
 		if (err)
 			return err;
+
+		err = rtl8367b_extif_init_of(smi, RTL8367_EXTIF2,
+					     "realtek,extif2");
+ 		if (err)
+ 			return err;
 	} else {
-		err = rtl8367b_extif_init(smi, 0, pdata->extif0_cfg);
+		err = rtl8367b_extif_init(smi, RTL8367_EXTIF0,
+					  pdata->extif0_cfg);
 		if (err)
 			return err;
 
-		err = rtl8367b_extif_init(smi, 1, pdata->extif1_cfg);
+		err = rtl8367b_extif_init(smi, RTL8367_EXTIF1,
+					  pdata->extif1_cfg);
 		if (err)
 			return err;
 	}
