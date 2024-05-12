@@ -734,24 +734,29 @@ static int rtl8367b_init_regs(struct rtl8366_smi *smi)
 
 	REG_WR(smi, RTL8367B_RTL_MAGIC_ID_REG, RTL8367B_RTL_MAGIC_ID_VAL);
 	REG_RD(smi, RTL8367B_CHIP_VER_REG, &chip_ver);
-
 	rlvid = (chip_ver >> RTL8367B_CHIP_VER_RLVID_SHIFT) &
 		RTL8367B_CHIP_VER_RLVID_MASK;
 
-	switch (rlvid) {
-	case 0:
-		initvals = rtl8367r_vb_initvals_0;
-		count = ARRAY_SIZE(rtl8367r_vb_initvals_0);
-		break;
+	if (of_device_is_compatible(smi->parent->of_node,
+				    "realtek,rtl8367s")) {
+		initvals = rtl8367c_initvals0;
+		count = ARRAY_SIZE(rtl8367c_initvals0);
+	} else {
+		switch (rlvid) {
+		case 0:
+			initvals = rtl8367r_vb_initvals_0;
+			count = ARRAY_SIZE(rtl8367r_vb_initvals_0);
+			break;
 
-	case 1:
-		initvals = rtl8367r_vb_initvals_1;
-		count = ARRAY_SIZE(rtl8367r_vb_initvals_1);
-		break;
+		case 1:
+			initvals = rtl8367r_vb_initvals_1;
+			count = ARRAY_SIZE(rtl8367r_vb_initvals_1);
+			break;
 
-	default:
-		dev_err(smi->parent, "unknow rlvid %u\n", rlvid);
-		return -ENODEV;
+		default:
+			dev_err(smi->parent, "unknow rlvid %u\n", rlvid);
+			return -ENODEV;
+		}
 	}
 
 	/* TODO: disable RLTP */
@@ -882,7 +887,45 @@ static int rtl8367b_extif_init(struct rtl8366_smi *smi, int id,
 			       struct rtl8367_extif_config *cfg)
 {
 	enum rtl8367_extif_mode mode;
-	int err;
+	int err, i;
+	/* for SGMII, works (from rtl8367s_api.c in TL-R600VPN v4 GPL) */
+	unsigned int redData[][2] = {
+		{0x7180, 0x2},
+		{0x04D7, 0x0480},
+		{0xF994, 0x0481},
+		{0x31A2, 0x0482},
+		{0x6960, 0x0483},
+		{0x9728, 0x0484},
+		{0x9D85, 0x0423},
+		{0xD810, 0x0424},
+		{0x0F80, 0x0001}
+	};
+
+	/*
+	 * for HSGMII, works
+	 * (from rtl8367c_asicdrv_port.c in TL-R600VPN v4 GPL,
+	 * based on redDataHB and customized like redData)
+	 */
+	unsigned int redDataH[][2] = {
+		{0x7180, 0x2},
+		{0x82F0, 0x0500},
+		{0xF195, 0x0501},
+		{0x31A2, 0x0502},
+		{0x7960, 0x0503},
+		{0x9728, 0x0504},
+		{0x9D85, 0x0423},
+		{0xD810, 0x0424},
+		{0x0F80, 0x0001},
+		{0x83F2, 0x002E}
+	};
+
+	if ((mode == RTL8367S_EXTIF_MODE_SGMII ||
+	     mode == RTL8367S_EXTIF_MODE_HSGMII)
+	     && id != RTL8367_EXTIF1) {
+		dev_err(smi->parent,
+			"SGMII/HSGMII mode is only available in extif1\n");
+		return -EINVAL;
+	}
 
 	mode = (cfg) ? cfg->mode : RTL8367_EXTIF_MODE_DISABLED;
 
