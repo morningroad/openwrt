@@ -1741,11 +1741,17 @@ static int  rtl8367b_probe(struct platform_device *pdev)
 	smi->ops = &rtl8367b_smi_ops;
 	smi->num_ports = RTL8367B_NUM_PORTS;
 	if (of_property_read_u32(pdev->dev.of_node, "cpu_port", &smi->cpu_port)
-	    || smi->cpu_port >= smi->num_ports)
-		smi->cpu_port = RTL8367B_CPU_PORT_NUM;
+	    || smi->cpu_port >= smi->num_ports) {
+		if (of_device_is_compatible(pdev->dev.of_node, "realtek,rtl8367s"))
+			smi->cpu_port = RTL8367S_CPU_PORT_NUM;
+		else
+			smi->cpu_port = RTL8367B_CPU_PORT_NUM;
+	}
 	smi->num_vlan_mc = RTL8367B_NUM_VLANS;
 	smi->mib_counters = rtl8367b_mib_counters;
 	smi->num_mib_counters = ARRAY_SIZE(rtl8367b_mib_counters);
+	if (of_device_is_compatible(pdev->dev.of_node, "realtek,rtl8367s"))
+		smi->phy_id = RTL8367S_PHY_ADDR;
 
 	err = rtl8366_smi_init(smi);
 	if (err)
@@ -1792,6 +1798,7 @@ static void rtl8367b_shutdown(struct platform_device *pdev)
 #ifdef CONFIG_OF
 static const struct of_device_id rtl8367b_match[] = {
 	{ .compatible = "realtek,rtl8367b" },
+        { .compatible = "realtek,rtl8367s" },
 	{},
 };
 MODULE_DEVICE_TABLE(of, rtl8367b_match);
