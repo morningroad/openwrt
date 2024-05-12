@@ -812,7 +812,19 @@ static int rtl8367b_extif_set_mode(struct rtl8366_smi *smi, int id,
 		REG_RMW(smi, RTL8367B_CHIP_DEBUG0_REG,
 		        RTL8367B_CHIP_DEBUG0_DUMMY0(id),
 			RTL8367B_CHIP_DEBUG0_DUMMY0(id));
+		if (id <= RTL8367_EXTIF1) {
 		REG_RMW(smi, RTL8367B_EXT_RGMXF_REG(id), BIT(6), BIT(6));
+
+		if (of_device_is_compatible(smi->parent->of_node,
+					    "realtek,rtl8367s")) {
+			REG_RMW(smi, RTL8367S_EXT_TXC_DLY_REG,
+				RTL8367S_EXT_GMII_TX_DELAY_MASK
+					<< RTL8367S_EXT1_GMII_TX_DELAY_SHIFT |
+				RTL8367S_EXT_GMII_TX_DELAY_MASK
+					<< RTL8367S_EXT0_GMII_TX_DELAY_SHIFT,
+				5 << RTL8367S_EXT1_GMII_TX_DELAY_SHIFT |	/* shoud be configured */
+				6 << RTL8367S_EXT0_GMII_TX_DELAY_SHIFT);	/* in set_rgmii_delay? */
+		}
 		break;
 
 	case RTL8367_EXTIF_MODE_MII_MAC:
@@ -823,12 +835,49 @@ static int rtl8367b_extif_set_mode(struct rtl8366_smi *smi, int id,
 		REG_RMW(smi, RTL8367B_EXT_RGMXF_REG(id), BIT(6), 0);
 		break;
 
+	case RTL8367S_EXTIF_MODE_SGMII:
+		if (!of_device_is_compatible(smi->parent->of_node,
+					     "realtek,rtl8367s"))
+			goto invalid_mode;
+
+		/* setup SerDes register for SGMII */
+		for (i = 0; i <= 7; i++) {
+			REG_WR(smi, RTL8367S_SDS_INDACS_DATA_REG, redData[i][0]);
+			REG_WR(smi, RTL8367S_SDS_INDACS_ADDR_REG, redData[i][1]);
+			REG_WR(smi, RTL8367S_SDS_INDACS_CMD_REG,
+				RTL8367S_SDS_CMD | RTL8367S_SDS_RWOP);
+		}
+		break;
+
+	case RTL8367S_EXTIF_MODE_HSGMII:
+		if (!of_device_is_compatible(smi->parent->of_node,
+					     "realtek,rtl8367s"))
+			goto invalid_mode;
+
+		/* setup SerDes register for HSGMII */
+		for (i = 0; i <= 8; i++) {
+			REG_WR(smi, RTL8367S_SDS_INDACS_DATA_REG, redDataH[i][0]);
+			REG_WR(smi, RTL8367S_SDS_INDACS_ADDR_REG, redDataH[i][1]);
+			REG_WR(smi, RTL8367S_SDS_INDACS_CMD_REG,
+				RTL8367S_SDS_CMD | RTL8367S_SDS_RWOP);
+		}
+		break;
+
 	default:
-		dev_err(smi->parent,
-			"invalid mode for external interface %d\n", id);
-		return -EINVAL;
+		goto invalid_mode;
 	}
 
+	if (id == RTL8367_EXTIF1 &&
+	    of_device_is_compatible(smi->parent->of_node, "realtek,rtl8367s")) {
+		REG_RMW(smi, RTL8367S_SDS_MISC,	RTL8367S_CFG_MAC8_SEL_HSGMII_MASK,
+			(mode == RTL8367S_EXTIF_MODE_HSGMII)
+				? RTL8367S_CFG_MAC8_SEL_HSGMII_MASK : 0);
+		REG_RMW(smi, RTL8367S_SDS_MISC,	RTL8367S_CFG_MAC8_SEL_SGMII,
+			(mode == RTL8367S_EXTIF_MODE_SGMII)
+				? RTL8367S_CFG_MAC8_SEL_SGMII : 0);
+	}
+
+	if (id <= RTL8367_EXTIF1)
 	REG_RMW(smi, RTL8367B_DIS_REG,
 		RTL8367B_DIS_RGMII_MASK << RTL8367B_DIS_RGMII_SHIFT(id),
 		mode << RTL8367B_DIS_RGMII_SHIFT(id));
