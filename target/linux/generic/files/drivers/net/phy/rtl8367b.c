@@ -1393,11 +1393,15 @@ static int rtl8367b_sw_get_port_link(struct switch_dev *dev,
 				    struct switch_port_link *link)
 {
 	struct rtl8366_smi *smi = sw_to_rtl8366_smi(dev);
-	u32 data = 0;
+	u32 data = 0, sds_misc = 0;
 	u32 speed;
 
 	if (port >= RTL8367B_NUM_PORTS)
 		return -EINVAL;
+
+	if (port == 6 &&
+		of_device_is_compatible(smi->parent->of_node, "realtek,rtl8367s"))
+		rtl8366_smi_read_reg(smi, RTL8367S_SDS_MISC, &sds_misc);
 
 	rtl8366_smi_read_reg(smi, RTL8367B_PORT_STATUS_REG(port), &data);
 
@@ -1419,7 +1423,10 @@ static int rtl8367b_sw_get_port_link(struct switch_dev *dev,
 		link->speed = SWITCH_PORT_SPEED_100;
 		break;
 	case 2:
-		link->speed = SWITCH_PORT_SPEED_1000;
+		link->speed = (((sds_misc & RTL8367S_CFG_MAC8_SEL_HSGMII_MASK)
+				>> RTL8367S_CFG_MAC8_SEL_HSGMII_SHIFT) == 1)
+				? SWITCH_PORT_SPEED_2500
+				: SWITCH_PORT_SPEED_1000;
 		break;
 	default:
 		link->speed = SWITCH_PORT_SPEED_UNKNOWN;
